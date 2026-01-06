@@ -1,6 +1,5 @@
 -- view_business
-DROP VIEW IF EXISTS `view_business`;
-CREATE VIEW `view_business` AS
+CREATE OR REPLACE VIEW `view_business` AS
 SELECT 
 B.`busns_id`,
 B.`busns_name`,
@@ -44,8 +43,7 @@ ORDER BY B.`busns_id` DESC;
 
 
 -- view_business_user
-DROP VIEW IF EXISTS `view_business_user`;
-CREATE VIEW `view_business_user` AS
+CREATE OR REPLACE VIEW `view_business_user` AS
 SELECT 
 BU.`bu_busns_id`,
 B.`busns_name` AS `bu_busns_name`,
@@ -102,12 +100,87 @@ ORDER BY BU.`bu_id` DESC;
 
 
 -- view_lead
-We need to show all leads along with last follow up
-Need show leads in human readable format
-Make sure we need to show human readable value for IDs check above 2 views
+CREATE OR REPLACE VIEW `view_lead` AS
+SELECT 
+L.`lead_id`, 
+L.`lead_from_busns_id`, 
+B.`busns_name` AS `lead_from_busns_name`,
+L.`lead_from_u_id`, 
+CONCAT(U.`u_fname`, ' ', U.`u_lname`) AS `lead_from_u_name`,
+U.`u_primary_email` AS `lead_from_u_primary_email`,
+U.`u_primary_mobile` AS `lead_from_u_primary_mobile`,
+U.`u_whatsapp` AS `lead_from_u_whatsapp`,
+L.`lead_to_u_id`, 
+CONCAT(U2.`u_fname`, ' ', U2.`u_lname`) AS `lead_to_u_name`,
+L.`lead_concern_issue`, 
+L.`lead_preferred_contact_method`, 
+L.`lead_subject`, 
+L.`lead_comment`, 
+L.`lead_initial_findings`, 
+L.`lead_first_incoming_message_dt`, 
+L.`lead_created`,
+LASTLF.`leadfup_id` AS `last_followup_id`,
+LASTLF.`leadfup_u_id` AS `last_followup_u_id`, 
+LASTLF.`leadfup_leadpot_id` AS `last_followup_leadpot_id`,
+LP.`leadpot_title` AS `last_followup_leadpot_title`, 
+LASTLF.`leadfup_leadfst_id` AS `last_followup_leadfst_id`, 
+LFS.`leadfst_title` AS `last_followup_leadfst_title`,
+LASTLF.`leadfup_leadfupvia_id` AS `last_followup_leadfupvia_id`, 
+LFVIA.`leadfupvia_title` AS `last_followup_leadfupvia_title`,
+LASTLF.`leadfup_note` AS `last_followup_note`, 
+LASTLF.`leadfup_competitor_note` AS `last_followup_competitor_note`, 
+LASTLF.`leadfup_created` AS `last_followup_date`,
+LASTLF.`leadfup_next_followup` AS `next_followup_date`
+FROM `te_lead` L
+LEFT JOIN `te_business` B ON L.`lead_from_busns_id` = B.`busns_id`
+LEFT JOIN `te_user` U ON L.`lead_from_u_id` = U.`u_id`
+LEFT JOIN `te_user` U2 ON L.`lead_to_u_id` = U2.`u_id`
+LEFT JOIN (
+  SELECT TEMPLF.`leadfup_lead_id`, MAX(TEMPLF.`leadfup_id`) AS `max_leadfup_id`
+  FROM `te_lead_followup` TEMPLF
+  WHERE 1 AND TEMPLF.`leadfup_deleted` IS NULL
+  GROUP BY TEMPLF.`leadfup_lead_id`
+) SUBLF ON SUBLF.`leadfup_lead_id` = L.`lead_id`
+LEFT JOIN `te_lead_followup` LASTLF ON LASTLF.`leadfup_id` = SUBLF.`max_leadfup_id`
+LEFT JOIN `te_user` U3 ON LASTLF.`leadfup_u_id` = U3.`u_id`
+LEFT JOIN `te_lead_potential` LP ON LASTLF.`leadfup_leadpot_id` = LP.`leadpot_id`
+LEFT JOIN `te_lead_followup_status` LFS ON LASTLF.`leadfup_leadfst_id` = LFS.`leadfst_id`
+LEFT JOIN `te_lead_followup_via` LFVIA ON LASTLF.`leadfup_leadfupvia_id` = LFVIA.`leadfupvia_id`
+WHERE 1
+AND L.`lead_deleted` IS NULL
+ORDER BY L.`lead_id` DESC;
 
 -- view_lead_followup
-Need to show all lead follow up in human redable format
-So, all follow up can be searched using lead id checked from view_lead
-
+CREATE OR REPLACE VIEW `view_lead_followup` AS
+SELECT 
+LFUP.`leadfup_id`, 
+LFUP.`leadfup_lead_id`, 
+L.`lead_subject` AS `leadfup_lead_subject`,
+L.`lead_comment` AS `leadfup_lead_comment`,
+L.`lead_initial_findings` AS `leadfup_lead_initial_findings`,
+B.`busns_name` AS `leadfup_lead_from_busns_name`,
+CONCAT(U2.`u_fname`, ' ', U2.`u_lname`) AS `leadfup_lead_from_u_name`,
+LFUP.`leadfup_u_id`, 
+CONCAT(U.`u_fname`, ' ', U.`u_lname`) AS `leadfup_u_name`,
+LFUP.`leadfup_leadpot_id`, 
+LP.`leadpot_title` AS `leadfup_leadpot_title`,
+LFUP.`leadfup_leadfst_id`, 
+LFS.`leadfst_title` AS `leadfup_leadfst_title`,
+LFUP.`leadfup_leadfupvia_id`, 
+LFVIA.`leadfupvia_title` AS `leadfup_leadfupvia_title`,
+LFUP.`leadfup_note`, 
+LFUP.`leadfup_competitor_note`, 
+LFUP.`leadfup_created`, 
+LFUP.`leadfup_next_followup`
+FROM `te_lead_followup` LFUP
+INNER JOIN `te_lead` L ON LFUP.`leadfup_lead_id` = L.`lead_id`
+LEFT JOIN `te_user` U ON LFUP.`leadfup_u_id` = U.`u_id`
+LEFT JOIN `te_lead_potential` LP ON LFUP.`leadfup_leadpot_id` = LP.`leadpot_id`
+LEFT JOIN `te_lead_followup_status` LFS ON LFUP.`leadfup_leadfst_id` = LFS.`leadfst_id`
+LEFT JOIN `te_lead_followup_via` LFVIA ON LFUP.`leadfup_leadfupvia_id` = LFVIA.`leadfupvia_id`
+LEFT JOIN `te_business` B ON L.`lead_from_busns_id` = B.`busns_id`
+LEFT JOIN `te_user` U2 ON L.`lead_from_u_id` = U2.`u_id`
+WHERE 1 
+AND LFUP.`leadfup_deleted` IS NULL
+ORDER BY LFUP.`leadfup_id` DESC;
 
