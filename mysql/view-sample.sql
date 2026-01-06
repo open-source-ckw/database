@@ -39,7 +39,8 @@ INNER JOIN `te_geo_city` GCI ON B.busns_city_id = GCI.city_id
 INNER JOIN `te_geo_state` GS ON B.busns_state_id = GS.state_id
 INNER JOIN `te_geo_country` GCN ON B.busns_country_id = GCN.country_id
 WHERE 1
-AND B.`busns_deleted` IS NULL;
+AND B.`busns_deleted` IS NULL
+ORDER BY B.`busns_id` DESC;
 
 
 -- view_business_user
@@ -95,7 +96,8 @@ LEFT JOIN `te_business_user` BU2 ON U2.`u_id` = BU2.`bu_u_id`
 LEFT JOIN `te_job_title` JT2 ON BU2.`bu_jtitle_id` = JT2.`jtitle_id`
 WHERE 1
 AND BU.`bu_deleted` IS NULL
-AND BU.`bu_active` IS NULL;
+AND BU.`bu_active` IS NULL
+ORDER BY BU.`bu_id` DESC;
 
 
 
