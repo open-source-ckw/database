@@ -1,8 +1,11 @@
+-- Mannys Ultimate Mixes DATABASE
+
+-- VIEW SQL
 -- view_business
 CREATE OR REPLACE VIEW `view_business` AS
 SELECT 
 B.`busns_id`,
-B.`busns_name`,
+B.`busns_name` AS `BusinessName`,
 B.`busns_address`,
 GCI.`city_name` AS `busns_city_name`,
 GS.`state_name` AS `busns_state_name`,
@@ -183,4 +186,147 @@ LEFT JOIN `te_user` U2 ON L.`lead_from_u_id` = U2.`u_id`
 WHERE 1 
 AND LFUP.`leadfup_deleted` IS NULL
 ORDER BY LFUP.`leadfup_id` DESC;
+
+----------------------
+-- PFG NC DATA PROCESS
+----------------------
+
+-- DATA TRANSFER SQL
+INSERT INTO temp_pfg_nc_user_sales_area (ID, SR_ID, UNIQUE_ID, SALES_AREA)
+WITH RECURSIVE split AS (
+  SELECT
+    t.ID,
+    t.SR_ID,
+    t.UNIQUE_ID,
+    TRIM(SUBSTRING_INDEX(t.SALES_AREA_FORMATTED, ',', 1)) AS SALES_AREA,
+    CASE
+      WHEN INSTR(t.SALES_AREA_FORMATTED, ',') > 0
+        THEN SUBSTRING(t.SALES_AREA_FORMATTED, INSTR(t.SALES_AREA_FORMATTED, ',') + 1)
+      ELSE ''
+    END AS rest
+  FROM temp_pfg_nc t
+  WHERE t.SALES_AREA_FORMATTED IS NOT NULL
+    AND TRIM(t.SALES_AREA_FORMATTED) <> ''
+
+  UNION ALL
+
+  SELECT
+    ID,
+    SR_ID,
+    UNIQUE_ID,
+    TRIM(SUBSTRING_INDEX(rest, ',', 1)) AS SALES_AREA,
+    CASE
+      WHEN INSTR(rest, ',') > 0
+        THEN SUBSTRING(rest, INSTR(rest, ',') + 1)
+      ELSE ''
+    END AS rest
+  FROM split
+  WHERE rest <> ''
+)
+SELECT
+  ID,
+  SR_ID,
+  UNIQUE_ID,
+  SALES_AREA
+FROM split
+WHERE SALES_AREA <> ''
+ON DUPLICATE KEY UPDATE
+  temp_pfg_nc_user_sales_area.SALES_AREA = temp_pfg_nc_user_sales_area.SALES_AREA;
+
+
+-- Multiple ROW for each record
+INSERT INTO temp_pfg_nc_user_sales_area (SR_ID, UNIQUE_ID, SALES_AREA)
+SELECT
+  t.SR_ID,
+  t.UNIQUE_ID,
+  TRIM(j.sales_area) AS SALES_AREA
+FROM temp_pfg_nc t
+JOIN JSON_TABLE(
+  CONCAT(
+    '["',
+    REPLACE(REPLACE(t.SALES_AREA_FORMATTED, '"', '\\"'), ',', '","'),
+    '"]'
+  ),
+  '$[*]' COLUMNS (
+    sales_area VARCHAR(255) PATH '$'
+  )
+) AS j
+ON DUPLICATE KEY UPDATE SALES_AREA = SALES_AREA;
+
+-- FIND THE DIFFERENCE
+SELECT * FROM temp_pfg_nc_user_sales_area A LEFT JOIN temp_pfg_nc_sales_area_unique B ON A.SALES_AREA = B.sales_area HAVING B.id IS NULL ORDER BY `UNIQUE_ID` ASC;
+
+
+-- ADD REAL USER ID AND BUSINESS USER ID TO TEMP USER SALES AREA
+UPDATE 
+temp_pfg_nc_user_sales_area A,
+temp_pfg_nc B
+SET 
+A.USER_ID = B.USER_ID,
+A.BUSINESS_USER_ID = B.BUSINESS_USER_ID
+WHERE
+A.UNIQUE_ID = B.UNIQUE_ID;
+
+
+
+-- FINAL IMPORT SQL
+
+INSERT INTO te_business_sales_area 
+(bsalar_busns_id, bsalar_bsalreg_id, bsalar_area_name, bsalar_import_unique_id, bsalar_import_batch, bsalar_import_note)
+SELECT 
+692 AS bsalar_busns_id,
+A.region_id AS bsalar_bsalreg_id,
+A.sales_area AS bsalar_area_name,
+A.id AS bsalar_import_unique_id,
+'MUM - Contacts - Database : PFG NC- Sales Team' AS bsalar_import_batch,
+'temp_pfg_nc_sales_area_unique' AS bsalar_import_note
+FROM temp_pfg_nc_sales_area_unique A
+WHERE 1;
+
+-- REVERSE UPDATE TO TEMP FOR FURTHER PROCESS
+UPDATE 
+temp_pfg_nc_sales_area_unique A, 
+te_business_sales_area B 
+SET A.main_id = B.bsalar_id 
+WHERE 
+A.id = B.bsalar_import_unique_id
+AND B.bsalar_busns_id = 692
+AND B.bsalar_import_batch = 'MUM - Contacts - Database : PFG NC- Sales Team'; 
+
+
+-- UPDATE temp_pfg_nc_user_sales_area
+UPDATE temp_pfg_nc_user_sales_area A,
+temp_pfg_nc_sales_area_unique B
+SET A.MAIN_SALES_AREA_ID = B.main_id
+WHERE A.SALES_AREA_ID = B.id;
+
+-- TRANSFER USER SALES AREA IN LOCATION
+INSERT INTO 
+te_business_user_sales_location
+(busl_bu_id, busl_bsalreg_id, busl_bsalar_id, busl_import_unique_id, busl_import_batch, busl_import_note)
+SELECT 
+A.BUSINESS_USER_ID,
+B.region_id,
+A.MAIN_SALES_AREA_ID,
+CONCAT(A.ID,":",A.MAIN_SALES_AREA_ID,":",A.UNIQUE_ID) AS busl_import_unique_id, 
+'MUM - Contacts - Database : PFG NC- Sales Team' AS busl_import_batch, 
+'temp_pfg_nc_user_sales_area' AS busl_import_note
+FROM 
+temp_pfg_nc_user_sales_area A
+LEFT JOIN temp_pfg_nc_sales_area_unique B
+ON A.SALES_AREA_ID = B.id
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
